@@ -2,31 +2,29 @@ from django.db import models
 from django.utils.translation import gettext as _, gettext_lazy as _
 
 
-class CashSale(models.Model):
-    cash_sale_date = models.DateField()
-    total_amount = models.DecimalField(max_digits=10, decimal_places=2)
-    payment_method = models.CharField(max_length=50)
-
-    def __str__(self):
-        return f"Cash Sale #{self.date}{self.id} | {self.total_amount} บาท | {self.payment_method}"
-
-    class Meta:
-        db_table = 'cash_sale'
-        verbose_name = _("การขายเงินสด")
-        verbose_name_plural = _("Cash Sales")
-
 class Customer(models.Model):
     name = models.CharField(max_length=255)                            # ชื่อลูกค้า
     phone = models.CharField(max_length=20, blank=True, null=True) 
-    address = models.TextField(blank=True, null=True)     
-
-    def __str__(self):
-        return f"{self.name}({self.address})" 
+    line_id = models.CharField(max_length=100, blank=True, null=True)
+    viber = models.CharField(max_length=100, blank=True, null=True, verbose_name="Viber ID")
+    viber_phone = models.CharField(max_length=20, blank=True, null=True, verbose_name="เบอร์ Viber")
+    address = models.TextField(blank=True, null=True)  
 
     class Meta:
         db_table = 'customer'
+        verbose_name = _("ลูกค้า")                  # ชื่อเอกพจน์ (แสดงในหน้าเพิ่ม/แก้ไข)
+        verbose_name_plural = _("customers")    # ชื่อพหูพจน์ (แสดงในลิสต์)
+        ordering = ['name']                         # เรียงลำดับตามชื่อโดย default
+       
+    def __str__(self):
+        return f"{self.name}({self.address})" 
+    
 
 class Quotation(models.Model):
+    customer = models.ForeignKey(Customer, on_delete=models.CASCADE, related_name="quotations")
+    quotation_date = models.DateField(verbose_name=_("วันที่เสนอราคา"))
+    Products = models.ManyToManyField('Product', through='QuotationItem', related_name="QuotationItem", verbose_name=_("สินค้าในใบเสนอราคา"))
+
     STATUS_CHOICES = [
         ('draft', _('แบบร่าง')),
         ('sent', _('ส่งแล้ว')),
@@ -37,8 +35,7 @@ class Quotation(models.Model):
         ('converted', _('แปลงเป็นใบแจ้งหนี้')),
     ]
     
-    customer = models.ForeignKey(Customer, on_delete=models.CASCADE, related_name="quotations")
-    quotation_date = models.DateField(verbose_name=_("วันที่เสนอราคา"))
+
     total_amount = models.DecimalField(
         max_digits=10, 
         decimal_places=2,
@@ -62,25 +59,55 @@ class Quotation(models.Model):
 
     def __str__(self):
         customer_name = getattr(self.customer, 'name', _("ไม่ระบุชื่อ"))
-        return f"ใบเสนอราคา #{self.id} (Customer: {customer_name})"
-    
+        return f"ใบเสนอราคา #{self.id} ({customer_name})"
+
+
 class Product(models.Model):
     category = models.ForeignKey('Category', on_delete=models.SET_NULL, null=True, blank=True, related_name="products", verbose_name=_("สินค้า"))
-    name = models.CharField(max_length=255)
-    price = models.DecimalField(max_digits=10, decimal_places=2)  
-    stock_quantity = models.PositiveIntegerField()
+    name = models.CharField(max_length=255, verbose_name=_("ชื่อสินค้า"))
+    price = models.DecimalField(max_digits=10, decimal_places=2, verbose_name=_("ราคาสินค้า"))
+    stock_quantity = models.PositiveIntegerField(verbose_name=_("จำนวนในสต็อก"))
     sku = models.CharField(max_length=100, unique=True, verbose_name=_("รหัสสินค้า")) #รหัสสินค้าแบบไม่ซ้ำ
-
 
     created_at = models.DateTimeField(auto_now_add=True) 
     updated_at = models.DateTimeField(auto_now=True)
 
-class Meta:
-    db_table = 'product'
+    class Meta:
+     db_table = 'product'
     ordering = ['name']
 
-def __str__(self):
-    return f"{self.name} ({self.sku})"
+    def __str__(self):
+        return f"{self.name} (SKU: {self.sku})"
+
+class QuotationItem(models.Model):
+    quotation = models.ForeignKey(Quotation, on_delete=models.CASCADE, related_name="items")
+    product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name="quotation_items")
+    quantity = models.PositiveIntegerField()
+    unit_price = models.DecimalField(max_digits=10, decimal_places=2)
+    subtotal = models.DecimalField(max_digits=12, decimal_places=2)
+
+    class Meta:
+        db_table = 'quotation_item'
+        unique_together = ('quotation', 'product')  # ป้องกันไม่ให้มีสินค้าเดียวกันซ้ำในใบเสนอราคาเดียวกัน
+
+    def __str__(self):
+        return f"{self.product.name} x {self.quantity} (Quotation #{self.quotation.id})"
+
+
+class CashSale(models.Model):
+    cash_sale_date = models.DateField()
+    total_amount = models.DecimalField(max_digits=10, decimal_places=2)
+    payment_method = models.CharField(max_length=50)
+
+    def __str__(self):
+        return f"Cash Sale #{self.date}{self.id} | {self.total_amount} บาท | {self.payment_method}"
+
+    class Meta:
+        db_table = 'cash_sale'
+        verbose_name = _("การขายเงินสด")
+        verbose_name_plural = _("Cash Sales")
+
+
 
 class Category(models.Model):
     name = models.CharField(max_length=255, verbose_name=_("ชื่อหมวดหมู่"))
