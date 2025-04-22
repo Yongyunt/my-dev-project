@@ -17,13 +17,13 @@ class Customer(models.Model):
         ordering = ['name']                         # เรียงลำดับตามชื่อโดย default
        
     def __str__(self):
-        return f"{self.name}({self.address})" 
+        return f"{self.name},{self.address}" 
     
 
 class Quotation(models.Model):
     customer = models.ForeignKey(Customer, on_delete=models.CASCADE, related_name="quotations")
     quotation_date = models.DateField(verbose_name=_("วันที่เสนอราคา"))
-    quotationItem = models.ManyToManyField('QuotationItem', through='QuotationItem', related_name="QuotationItem", verbose_name=_("สินค้าในใบเสนอราคา"))
+    # quotationItem = models.ManyToManyField('QuotationItem', through='QuotationItem', related_name="QuotationItem", verbose_name=_("สินค้าในใบเสนอราคา"))
 
     STATUS_CHOICES = [
         ('draft', _('แบบร่าง')),
@@ -35,18 +35,17 @@ class Quotation(models.Model):
         ('converted', _('แปลงเป็นใบแจ้งหนี้')),
     ]
     
-
-    total_amount = models.DecimalField(
-        max_digits=10, 
-        decimal_places=2,
-        verbose_name=_("จำนวนเงินรวม")
-    )
-
     status = models.CharField(
         max_length=10,
         choices=STATUS_CHOICES,
         default='draft',
         verbose_name=_("รออนุมัติ")
+    )
+
+    total_amount = models.DecimalField(
+        max_digits=10, 
+        decimal_places=2,
+        verbose_name=_("จำนวนเงินรวม")
     )
 
     created_at = models.DateTimeField(auto_now_add=True, verbose_name=_("วันที่สร้าง"))
@@ -59,7 +58,7 @@ class Quotation(models.Model):
 
     def __str__(self):
         customer_name = getattr(self.customer, 'name', _("ไม่ระบุชื่อ"))
-        return f"ใบเสนอราคา #{self.id} ({customer_name})"
+        return f"{self.quotation_date} ,{self.id} ,{customer_name}, {self.total_amount}, {self.status}"
 
 
 class Product(models.Model):
@@ -94,42 +93,6 @@ class QuotationItem(models.Model):
         return f"{self.product.name} x {self.quantity} (Quotation #{self.quotation.id})"
 
 
-class CashSale(models.Model):
-    cash_sale_date = models.DateField()
-    total_amount = models.DecimalField(max_digits=10, decimal_places=2)
-    payment_method = models.CharField(max_length=50)
-
-    def __str__(self):
-        return f"Cash Sale #{self.date}{self.id} | {self.total_amount} บาท | {self.payment_method}"
-
-    class Meta:
-        db_table = 'cash_sale'
-        verbose_name = _("การขายเงินสด")
-        verbose_name_plural = _("Cash Sales")
-
-
-
-class Category(models.Model):
-    name = models.CharField(max_length=255, verbose_name=_("ชื่อหมวดหมู่"))
-    parent_category = models.ForeignKey(
-        'self', 
-        null=True, 
-        blank=True, 
-        on_delete=models.SET_NULL, 
-        related_name="subcategories",
-        verbose_name=_("หมวดหมู่หลัก")
-    )
-
-    def __str__(self):
-        return f"{self.name} (Parent: {self.parent_category.name if self.parent_category else 'None'})"
-
-    class Meta:
-        db_table = 'category'
-        verbose_name = _("หมวดหมู่สินค้า")
-        verbose_name_plural = _("categories")
-
-
-
 class Invoice(models.Model):
     quotation = models.ForeignKey(Quotation, on_delete=models.CASCADE)
     customer = models.ForeignKey(Customer, on_delete=models.CASCADE)
@@ -148,35 +111,96 @@ class Invoice(models.Model):
         default='pending',
         verbose_name="รอดำเนินการ"
     )
-    # products = models.ManyToManyField(
-    #     Product, 
-    #     through='InvoiceProduct', 
-    #     related_name='invoices', 
-    #     verbose_name=_("สินค้าในใบแจ้งหนี้")
-    # )
-    # products = models.ManyToManyField(Product, through='InvoiceProduct')
-
-    # PAYMENT_METHOD_CHOICES = [
-    #     ('cash', 'เงินสด'),
-    #     ('credit', 'บัตรเครดิต'),
-    #     ('bank_transfer', 'โอนผ่านธนาคาร'),
-    # ]
-
-    # payment_method = models.CharField(
-    #     max_length=50,
-    #     choices=PAYMENT_METHOD_CHOICES,
-    #     default='cash',
-    #     verbose_name=_("วิธีการชำระเงิน (Payment Method)")
-    # )
-
-    def __str__(self):
-        customer_name = getattr(self.customer, 'name', _("ไม่ระบุชื่อ"))
-        return f"Invoice #{self.id} | {customer_name} | {self.total_amount} บาท | {self.payment_status}"
 
     class Meta:
         db_table = 'invoice'
         verbose_name = _("ใบแจ้งหนี้")
         verbose_name_plural = _("Invoices")
+
+    def __str__(self):
+        customer_name = getattr(self.customer, 'name', _("ไม่ระบุชื่อ"))
+        return f"Invoice #{self.id} | {customer_name} | {self.total_amount} บาท | {self.payment_status}"
+
+class InvoiceItem(models.Model):
+    invoice = models.ForeignKey(Invoice, on_delete=models.CASCADE, related_name="items")
+    product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name="invoice_items")
+    quantity = models.PositiveIntegerField()
+    unit_price = models.DecimalField(max_digits=10, decimal_places=2)
+    subtotal = models.DecimalField(max_digits=12, decimal_places=2)
+
+    class Meta:
+        db_table = 'invoice_item'
+        unique_together = ('invoice', 'product')  # ป้องกันไม่ให้มีสินค้าเดียวกันซ้ำในใบแจ้งหนี้เดียวกัน
+
+    def __str__(self):
+        return f"{self.product.name} x {self.quantity} (Invoice #{self.invoice.id})"
+    
+class CashSale(models.Model):
+    cash_sale_date = models.DateField()
+    total_amount = models.DecimalField(max_digits=10, decimal_places=2)
+    payment_method = models.CharField(max_length=50)
+
+    class Meta:
+        db_table = 'cash_sale'
+        verbose_name = _("การขายเงินสด")
+        verbose_name_plural = _("Cash Sales")
+    
+    def __str__(self):
+        return f"Cash Sale #{self.date}{self.id} | {self.total_amount} บาท | {self.payment_method}"
+
+class CashSaleItem(models.Model):
+    cash_sale = models.ForeignKey(CashSale, on_delete=models.CASCADE, related_name="items")
+    product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name="cash_sale_items")
+    quantity = models.PositiveIntegerField()
+    unit_price = models.DecimalField(max_digits=10, decimal_places=2)
+    subtotal = models.DecimalField(max_digits=12, decimal_places=2)
+
+    class Meta:
+        db_table = 'cash_sale_item'
+        unique_together = ('cash_sale', 'product')  # ป้องกันไม่ให้มีสินค้าเดียวกันซ้ำในการขายเงินสดเดียวกัน
+
+    def __str__(self):
+        return f"{self.product.name} x {self.quantity} (Cash Sale #{self.cash_sale.id})"
+
+class Receipt(models.Model):
+    invoice = models.ForeignKey(Invoice, on_delete=models.CASCADE)
+    receipt_date = models.DateField(null=True, blank=True)
+
+    PAYMENT_METHOD_CHOICES = [
+    ('cash', _('เงินสด')),
+    ('transfer', _('โอน')),
+]
+
+    payment_method = models.CharField(max_length=50, choices=PAYMENT_METHOD_CHOICES)
+    total_amount = models.DecimalField(max_digits=10, decimal_places=2)
+
+    def __str__(self):
+        return f"Receipt #{self.id} | {getattr(self.invoice.customer, 'name', 'Unknown')} | {self.total_amount} บาท | {self.payment_method}"
+
+    class Meta:
+        db_table = 'receipt'
+        verbose_name = _("ใบเสร็จรับเงิน")
+        verbose_name_plural = _("Receipts")
+
+
+class Category(models.Model):
+    name = models.CharField(max_length=255, verbose_name=_("ชื่อหมวดหมู่"))
+    parent_category = models.ForeignKey(
+        'self', 
+        null=True, 
+        blank=True, 
+        on_delete=models.SET_NULL, 
+        related_name="subcategories",
+        verbose_name=_("หมวดหมู่หลัก")
+    )
+
+    class Meta:
+        db_table = 'category'
+        verbose_name = _("หมวดหมู่สินค้า")
+        verbose_name_plural = _("categories")
+
+    def __str__(self):
+        return f"{self.name} (Parent: {self.parent_category.name if self.parent_category else 'None'})"
 
 
 
