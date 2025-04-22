@@ -23,7 +23,7 @@ class Customer(models.Model):
 class Quotation(models.Model):
     customer = models.ForeignKey(Customer, on_delete=models.CASCADE, related_name="quotations")
     quotation_date = models.DateField(verbose_name=_("วันที่เสนอราคา"))
-    Products = models.ManyToManyField('Product', through='QuotationItem', related_name="QuotationItem", verbose_name=_("สินค้าในใบเสนอราคา"))
+    quotationItem = models.ManyToManyField('QuotationItem', through='QuotationItem', related_name="QuotationItem", verbose_name=_("สินค้าในใบเสนอราคา"))
 
     STATUS_CHOICES = [
         ('draft', _('แบบร่าง')),
