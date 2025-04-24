@@ -1,11 +1,12 @@
 from django.db import models
 from django.utils.translation import gettext as _, gettext_lazy as _
 from django.core.validators import MinValueValidator
+import django
 
 
 class Customer(models.Model):
-    name = models.CharField(max_length=255)                            # ชื่อลูกค้า
-    phone = models.CharField(max_length=20, blank=True, null=True) 
+    name = models.CharField(max_length=255)                            
+    phone_number = models.CharField(max_length=20, blank=True, null=True) 
     line_id = models.CharField(max_length=100, blank=True, null=True)
     viber = models.CharField(max_length=100, blank=True, null=True, verbose_name="Viber ID")
     viber_phone = models.CharField(max_length=20, blank=True, null=True, verbose_name="เบอร์ Viber")
@@ -18,13 +19,13 @@ class Customer(models.Model):
         ordering = ['name']                         # เรียงลำดับตามชื่อโดย default
        
     def __str__(self):
-        return f"{self.name},{self.address}" 
+        return f"{self.name}" 
     
 
 class Quotation(models.Model):
     customer = models.ForeignKey(Customer, on_delete=models.CASCADE, related_name="quotations")
     quotation_date = models.DateField(verbose_name=_("วันที่เสนอราคา"))
-    # quotationItem = models.ManyToManyField('QuotationItem', through='QuotationItem', related_name="QuotationItem", verbose_name=_("สินค้าในใบเสนอราคา"))
+    total_amount = models.DecimalField(max_digits=12, decimal_places=2)
 
     STATUS_CHOICES = [
         ('draft', _('แบบร่าง')),
@@ -58,40 +59,25 @@ class Quotation(models.Model):
         verbose_name_plural = _("quotations")
 
     def __str__(self):
-        customer_name = getattr(self.customer, 'name', _("ไม่ระบุชื่อ"))
-        return f"{self.quotation_date} ,{self.id} ,{customer_name}, {self.total_amount}, {self.status}"
-
+        return f"Quotation #{self.id}"
+   
 
 class QuotationItem(models.Model):
     quotation = models.ForeignKey(Quotation, on_delete=models.CASCADE, related_name="quotation_items")
     product = models.ForeignKey('Product', on_delete=models.CASCADE, related_name="quotation_items")
     quantity = models.PositiveIntegerField(validators=[MinValueValidator(1)])  # ต้องมีจำนวนอย่างน้อย 1
     unit_price = models.DecimalField(max_digits=10, decimal_places=2)
-
     subtotal = models.DecimalField(max_digits=12, decimal_places=2, editable=False)
 
     class Meta:
-        constraints = [
-            models.UniqueConstraint(
-                fields=['quotation', 'product'],
-                name='unique_quotation_product'
-            )
-        ]  # ป้องกันไม่ให้มีสินค้าเดียวกันซ้ำในใบเสนอราคาเดียวกัน
+        unique_together = ('quotation', 'product')
 
     def save(self, *args, **kwargs):
-        if self.unit_price is None or self.quantity is None:
-            raise ValueError("Both 'unit_price' and 'quantity' must be set before saving.")
+        self.subtotal = self.quantity * self.unit_price
         super().save(*args, **kwargs)
-        db_table = 'quotation_item'
-        unique_together = ('quotation', 'product')  # ป้องกันไม่ให้มีสินค้าเดียวกันซ้ำในใบเสนอราคาเดียวกัน
 
     def __str__(self):
-        product_name = getattr(self.product, 'name', 'Unknown Product')
-        quotation_id = getattr(self.quotation, 'id', 'Unknown Quotation')
-        return f"{product_name} x {self.quantity} (Quotation #{quotation_id})"
-
-    def __str__(self):
-        return f"{self.product.name} x {self.quantity} (Quotation #{self.quotation.id})"
+        return f"{self.product.name} x {self.quantity}"
 
 
 class Product(models.Model):
@@ -106,10 +92,10 @@ class Product(models.Model):
 
     class Meta:
      db_table = 'product'
-    ordering = ['name']
+    ordering = ['id']
 
     def __str__(self):
-        return f"{self.name} (SKU: {self.sku})"
+        return f"{self.name}"
 
 
 class Category(models.Model):
@@ -120,7 +106,7 @@ class Category(models.Model):
         blank=True, 
         on_delete=models.SET_NULL, 
         related_name="subcategories",
-        verbose_name=_("หมวดหมู่หลัก")
+        verbose_name=_("หมวดหมู่ย่อย")
     )
 
     class Meta:
@@ -129,12 +115,13 @@ class Category(models.Model):
         verbose_name_plural = _("categories")
 
     def __str__(self):
-        return f"{self.name} (Parent: {self.parent_category.name if self.parent_category else 'None'})"
+        return f"{self.name}"
 
 
 class Invoice(models.Model):
     quotation = models.ForeignKey(Quotation, on_delete=models.CASCADE)
     customer = models.ForeignKey(Customer, on_delete=models.CASCADE)
+    invoice_date = models.DateField(auto_now_add=True)
     PAYMENT_STATUS_CHOICES = [
         ('draft', _('แบบร่าง')),
         ('sent', _('ส่งแล้ว')),                   # ส่งใบแจ้งหนี้ให้ลูกค้าแล้ว
@@ -161,8 +148,8 @@ class Invoice(models.Model):
         verbose_name_plural = _("Invoices")
 
     def __str__(self):
-        customer_name = getattr(self.customer, 'name', _("ไม่ระบุชื่อ"))
-        return f"Invoice #{self.id} | {customer_name} | {self.total_amount} บาท | {self.payment_status}"
+        return f"Invoice #{self.id}"
+
 
 class InvoiceItem(models.Model):
     invoice = models.ForeignKey(Invoice, on_delete=models.CASCADE, related_name="invoice_items")
@@ -193,7 +180,7 @@ class InvoiceItem(models.Model):
 
 class Receipt(models.Model):
     invoice = models.ForeignKey(Invoice, on_delete=models.CASCADE)
-    receipt_date = models.DateField(blank=True)
+    receipt_date = models.DateField()
 
     PAYMENT_METHOD_CHOICES = [
     ('cash', _('เงินสด')),
