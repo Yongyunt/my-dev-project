@@ -1,7 +1,6 @@
 from django.db import models
 from django.utils.translation import gettext as _, gettext_lazy as _
 from django.core.validators import MinValueValidator
-import django
 
 
 class Customer(models.Model):
@@ -23,38 +22,40 @@ class Customer(models.Model):
     
 
 class Quotation(models.Model):
-    customer = models.ForeignKey(Customer, on_delete=models.CASCADE, related_name="quotations")
+    customer = models.ForeignKey(Customer, on_delete=models.CASCADE, related_name="customer_quotations")
     quotation_date = models.DateField(verbose_name=_("วันที่เสนอราคา"))
-    total_amount = models.DecimalField(max_digits=12, decimal_places=2)
 
-    STATUS_CHOICES = [
-        ('draft', _('แบบร่าง')),
-        ('sent', _('ส่งแล้ว')),
-        ('revised', _('ปรับแก้ไข')),
-        ('approved', _('ลูกค้าอนุมัติ')),
-        ('rejected', _('ลูกค้าปฏิเสธ')),
-        ('cancelled', _('ยกเลิก')),
-        ('converted', _('แปลงเป็นใบแจ้งหนี้')),
-    ]
+    class Status(models.TextChoices):
+        DRAFT = 'draft', _('รออนุมัติ')
+        SENT = 'sent', _('ส่งแล้ว')
+        REVISED = 'revised', _('ปรับแก้ไข')
+        APPROVED = 'approved', _('ลูกค้าอนุมัติ')
+        REJECTED = 'rejected', _('ลูกค้าปฏิเสธ')
+        CANCELLED = 'cancelled', _('ยกเลิก')
+        CONVERTED = 'converted', _('แปลงเป็นใบแจ้งหนี้')
     
     status = models.CharField(
         max_length=10,
-        choices=STATUS_CHOICES,
-        default='draft',
-        verbose_name=_("รออนุมัติ")
+        choices=Status.choices,
+        default=Status.DRAFT,
+        verbose_name=_("สถานะ")
     )
 
     total_amount = models.DecimalField(
         max_digits=10, 
         decimal_places=2,
-        verbose_name=_("จำนวนเงินรวม")
+        verbose_name=_("จำนวนเงินรวม"),
+        editable=False
     )
+
+    def save(self, *args, **kwargs):
+        self.total_amount = sum(item.subtotal for item in self.quotation_items.all())
+        super().save(*args, **kwargs)
 
     created_at = models.DateTimeField(auto_now_add=True, verbose_name=_("วันที่สร้าง"))
     updated_at = models.DateTimeField(auto_now=True, verbose_name=_("วันที่อัปเดต"))
 
     class Meta:
-        db_table = 'quotation'
         verbose_name = _("ใบเสนอราคา")
         verbose_name_plural = _("quotations")
 
@@ -134,8 +135,8 @@ class Invoice(models.Model):
     payment_status = models.CharField(
         max_length=50,
         choices=PAYMENT_STATUS_CHOICES,
-        default='pending',
-        verbose_name="รอดำเนินการ"
+        default='draft',
+        verbose_name="สถานะ"
     )
 
     @property
@@ -152,34 +153,23 @@ class Invoice(models.Model):
 
 
 class InvoiceItem(models.Model):
-    invoice = models.ForeignKey(Invoice, on_delete=models.CASCADE, related_name="invoice_items")
+    invoice = models.ForeignKey(Invoice, on_delete=models.CASCADE, related_name="items")
     product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name="invoice_items")
     quantity = models.PositiveIntegerField()
     unit_price = models.DecimalField(max_digits=10, decimal_places=2)
-    @property
-    def subtotal(self):
-        if self.quantity is None or self.unit_price is None:
-            return 0
-        return self.quantity * self.unit_price
+    subtotal = models.DecimalField(max_digits=12, decimal_places=2, editable=False)
 
-        # Removed redundant unique_together as it is already defined in constraints
-        db_table = 'invoice_item'
-        unique_together = ('invoice', 'product')  # ป้องกันไม่ให้มีสินค้าเดียวกันซ้ำในใบแจ้งหนี้เดียวกัน
-        constraints = [
-            models.UniqueConstraint(
-                fields=['invoice', 'product'],
-                name='unique_invoice_product'
-            )
-        ]   
+    class Meta:
+        unique_together = ('invoice', 'product')
 
-    def __str__(self):
-        product_name = self.product.name if self.product and self.product.name else 'Unknown Product'
-        invoice_id = self.invoice.id if self.invoice and self.invoice.id else 'Unknown Invoice'
-        return f"{product_name} x {self.quantity} (Invoice #{invoice_id})"
+    def save(self, *args, **kwargs):
+        self.subtotal = self.quantity * self.unit_price
+        super().save(*args, **kwargs)   
 
 
 class Receipt(models.Model):
-    invoice = models.ForeignKey(Invoice, on_delete=models.CASCADE)
+    invoice = models.ForeignKey(Invoice, null=True, blank=True, on_delete=models.SET_NULL, related_name='receipts')
+    customer = models.ForeignKey(Customer, on_delete=models.SET_NULL, null=True, blank=True)
     receipt_date = models.DateField()
 
     PAYMENT_METHOD_CHOICES = [
@@ -190,14 +180,15 @@ class Receipt(models.Model):
     payment_method = models.CharField(max_length=50, choices=PAYMENT_METHOD_CHOICES)
     total_amount = models.DecimalField(max_digits=10, decimal_places=2)
 
-    def __str__(self):
-        return f"Receipt #{self.id} | {getattr(self.invoice.customer, 'name', 'Unknown')} | {self.invoice.total_amount} บาท | {self.payment_method}"
-
     class Meta:
         db_table = 'receipt'
         verbose_name = _("ใบเสร็จรับเงิน")  
         verbose_name_plural = _("Receipts")  
 
+    def __str__(self):
+        return f"Receipt #{self.id}"
+
+ 
 
 class CashSale(models.Model):
     cash_sale_date = models.DateField()
