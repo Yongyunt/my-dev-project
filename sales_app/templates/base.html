@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    {% block title %}
+    {% endblock %}
+</head>
+<body>
+    <a href="/">กลับไปที่หน้าแรก</a>
+    <a href="/quotations">ใบเสนอราคา</a>
+    <a href="/products">ไปที่หน้าสินค้า</a>
+    <a href="/contacts">ไปที่หน้าลูกค้า</a>
+    <h1 style="color: red;" >ภาพรวม</h1>
+    <hr>
+    <div>
+        {% block content %}
+        {% endblock %}
+    </div>
+</body>
+</html>
