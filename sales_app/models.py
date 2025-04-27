@@ -191,6 +191,7 @@ class Receipt(models.Model):
  
 
 class CashSale(models.Model):
+    customer = models.ForeignKey(Customer, on_delete=models.SET_NULL, null=True, blank=True, related_name='cash_sales')
     cash_sale_date = models.DateField()
     total_amount = models.DecimalField(max_digits=10, decimal_places=2)
     payment_method = models.CharField(max_length=50)
