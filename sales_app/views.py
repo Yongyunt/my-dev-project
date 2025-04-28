@@ -1,5 +1,6 @@
 from django.shortcuts import render
 from django.http import HttpResponse
+from sales_app.models import Customer
 
 # Create your views here.
 def index(request):
@@ -12,4 +13,5 @@ def products(request):
     return render(request, "products.html")
 
 def contacts(request):
-    return render(request, "contacts.html")
+    allCustomer = Customer.objects.all()
+    return render(request, "contacts.html", {"allCustomer": allCustomer})
